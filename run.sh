@@ -1,22 +1,22 @@
 #!/bin/bash
 
 IMAGE="rainfall.qcow2"
-ISO="RainFall.iso"
+ISO="rainfall.iso"
 ISO_URL="https://cdn.intra.42.fr/isos/RainFall.iso"
 IMAGE_SIZE="2G"
 
 if [ ! -f "$IMAGE" ]; then
-    echo "[+] Création de l'image $IMAGE ($IMAGE_SIZE)"
+    echo "[+] Creating $IMAGE ($IMAGE_SIZE)"
     qemu-img create -f qcow2 "$IMAGE" "$IMAGE_SIZE"
 else
-    echo "[=] L'image $IMAGE existe déjà"
+    echo "[=] $IMAGE already created"
 fi
 
 if [ ! -f "$ISO" ]; then
-    echo "[+] Téléchargement de $ISO"
+    echo "[+] Downloading $ISO"
     wget "$ISO_URL" -O "$ISO"
 else
-    echo "[=] L'ISO $ISO existe déjà"
+    echo "[=] $ISO already downloaded"
 fi
 
 qemu-system-x86_64 \
