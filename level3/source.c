@@ -7,7 +7,7 @@ void v(void) {
   fgets(buf, 512, stdin);
   int size = printf(buf);
   if (size == 64) {
-    fwrite("Wait what?!\n", 1, 0xc, stdout);
+    fwrite("Wait what?!\n", 1, 12, stdout);
     system("/bin/sh");
   }
 
