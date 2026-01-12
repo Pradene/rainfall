@@ -3,7 +3,6 @@ For this level, we only have an executable called level3:
 level3@RainFall:~$ ls -l
 total 8
 -rwsr-s---+ 1 level4 users 5366 Mar  6  2016 level3
-
 ```
 
 Let’s try to execute it:
@@ -19,7 +18,7 @@ lol
 lol
 ```
 
-This time the input given is sending back as output we can deduc that a put*, print* or similar is called but nothibg more. We therefore inspect the binary using objdump:
+This time the input given is sending back as output we can deduc that a put*, print* or similar is called but nothing more. We therefore inspect the binary using objdump:
 ```bash
 080484a4 <v>:
  80484a4:	55                   	push   %ebp
@@ -83,6 +82,7 @@ After the call to gets, the program performs a comparison (cmp) between eax, whi
  ...
  8048518:	c9                   	leave 
 ```
+
 Ok if the comparaison fail we jump (jne) directly to the leave instruction (8048518) and as we can see on the source code, miss the beautiful system call that will gives us a shell with the level4 privilege.
 
 ```c
